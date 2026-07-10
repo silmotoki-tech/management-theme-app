@@ -1,20 +1,30 @@
 import Link from "next/link";
-
-const topEntries = [
-  { href: "/now", label: "今やっていること", count: 5 },
-  { href: "/continuing", label: "継続していること", count: 4 },
-  { href: "/done", label: "終了したこと", count: 12 },
-] as const;
+import { getActiveThemes, getContinuingThemes, getDoneThemes } from "@/lib/themes";
 
 export default function Home() {
+  const topEntries = [
+    {
+      href: "/now",
+      label: "今やっていること",
+      count: getActiveThemes().length,
+    },
+    {
+      href: "/continuing",
+      label: "継続していること",
+      count: getContinuingThemes().length,
+    },
+    {
+      href: "/done",
+      label: "終了したこと",
+      count: getDoneThemes().length,
+    },
+  ];
+
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50">
+    <div className="flex flex-1 flex-col bg-stone-50">
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-8 px-5 py-10">
         <header>
-          <h1 className="text-xl font-bold text-zinc-900">経営テーマ</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            院長・副院長で共有する経営テーマの状況です
-          </p>
+          <h1 className="text-xl font-bold text-zinc-900">タスク管理アプリ</h1>
         </header>
 
         <div className="flex flex-1 flex-col gap-4">
