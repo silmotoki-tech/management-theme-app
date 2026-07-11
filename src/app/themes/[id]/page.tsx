@@ -1,14 +1,19 @@
+"use client";
+
+import { use } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getThemeById } from "@/lib/themes";
+import { useThemeStore } from "@/lib/theme-store";
+import { selectThemeById } from "@/lib/themes";
 
-export default async function ThemeDetailPage({
+export default function ThemeDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const theme = getThemeById(id);
+  const { id } = use(params);
+  const { themes } = useThemeStore();
+  const theme = selectThemeById(themes, id);
 
   if (!theme) {
     notFound();
@@ -17,9 +22,17 @@ export default async function ThemeDetailPage({
   return (
     <div className="flex flex-1 flex-col bg-zinc-50">
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-5 py-10">
-        <Link href="/" className="text-sm font-medium text-zinc-500">
-          ← トップへ戻る
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href="/" className="text-sm font-medium text-zinc-500">
+            ← トップへ戻る
+          </Link>
+          <Link
+            href={`/themes/${theme.id}/edit`}
+            className="rounded-full border border-zinc-300 bg-white px-4 py-1.5 text-sm font-semibold text-zinc-700 active:bg-zinc-100"
+          >
+            編集
+          </Link>
+        </div>
 
         <h1 className="text-xl font-bold text-zinc-900">{theme.title}</h1>
 
@@ -34,11 +47,16 @@ export default async function ThemeDetailPage({
         </section>
 
         <section className="flex flex-col gap-1">
-          <h2 className="text-sm font-semibold text-zinc-500">
-            期限 / 次回確認日
-          </h2>
+          <h2 className="text-sm font-semibold text-zinc-500">期限</h2>
           <p className="text-base text-zinc-900">
             {theme.dueDate ?? "設定なし"}
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold text-zinc-500">次回確認日</h2>
+          <p className="text-base text-zinc-900">
+            {theme.nextCheckDate ?? "設定なし"}
           </p>
         </section>
 

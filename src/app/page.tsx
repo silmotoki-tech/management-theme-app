@@ -1,28 +1,38 @@
+"use client";
+
 import Link from "next/link";
-import { getActiveThemes, getContinuingThemes, getDoneThemes } from "@/lib/themes";
+import { useThemeStore } from "@/lib/theme-store";
+import {
+  selectActiveThemes,
+  selectContinuingThemes,
+  selectDoneThemes,
+} from "@/lib/themes";
+import { NewThemeButton } from "@/components/new-theme-button";
 
 export default function Home() {
+  const { themes } = useThemeStore();
+
   const topEntries = [
     {
       href: "/now",
       label: "今やっていること",
-      count: getActiveThemes().length,
+      count: selectActiveThemes(themes).length,
     },
     {
       href: "/continuing",
       label: "継続していること",
-      count: getContinuingThemes().length,
+      count: selectContinuingThemes(themes).length,
     },
     {
       href: "/done",
       label: "終了したこと",
-      count: getDoneThemes().length,
+      count: selectDoneThemes(themes).length,
     },
   ];
 
   return (
     <div className="flex flex-1 flex-col bg-stone-50">
-      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-8 px-5 py-10">
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-8 px-5 py-10 pb-28">
         <header>
           <h1 className="text-xl font-bold text-zinc-900">タスク管理アプリ</h1>
         </header>
@@ -47,6 +57,7 @@ export default function Home() {
           ))}
         </div>
       </main>
+      <NewThemeButton />
     </div>
   );
 }
