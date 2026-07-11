@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useThemeStore } from "@/lib/theme-store";
+import { useAuth } from "@/lib/auth-store";
 import {
   selectActiveThemes,
   selectContinuingThemes,
@@ -11,6 +12,7 @@ import { NewThemeButton } from "@/components/new-theme-button";
 
 export default function Home() {
   const { themes } = useThemeStore();
+  const { logout } = useAuth();
 
   const topEntries = [
     {
@@ -33,8 +35,15 @@ export default function Home() {
   return (
     <div className="flex flex-1 flex-col bg-stone-50">
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-8 px-5 py-10 pb-28">
-        <header>
+        <header className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-zinc-900">タスク管理アプリ</h1>
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="text-sm font-medium text-zinc-500"
+          >
+            ログアウト
+          </button>
         </header>
 
         <div className="flex flex-1 flex-col gap-4">

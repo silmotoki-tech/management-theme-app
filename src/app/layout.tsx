@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AuthProvider } from "@/lib/auth-store";
+import { AuthGate } from "@/components/auth-gate";
 import { ThemeStoreProvider } from "@/lib/theme-store";
 import "./globals.css";
 
@@ -29,7 +31,11 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ThemeStoreProvider>{children}</ThemeStoreProvider>
+        <AuthProvider>
+          <AuthGate>
+            <ThemeStoreProvider>{children}</ThemeStoreProvider>
+          </AuthGate>
+        </AuthProvider>
       </body>
     </html>
   );
