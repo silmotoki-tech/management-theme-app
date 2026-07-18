@@ -20,6 +20,8 @@ type ThemeFormProps = {
   /** 「終了した」の切り替えを表示するか（新規作成時はfalse、編集時はtrue）。 */
   showDoneToggle: boolean;
   submitLabel: string;
+  /** 保存処理中はtrue。二重送信防止とボタン表示に使う。 */
+  submitting?: boolean;
   onSubmit: (values: ThemeFormInputValues) => void;
 };
 
@@ -27,6 +29,7 @@ export function ThemeForm({
   initialValues,
   showDoneToggle,
   submitLabel,
+  submitting = false,
   onSubmit,
 }: ThemeFormProps) {
   const [values, setValues] = useState(initialValues);
@@ -44,6 +47,8 @@ export function ThemeForm({
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
+
+    if (submitting) return;
 
     if (values.title.trim() === "") {
       setTitleError(true);
@@ -176,9 +181,10 @@ export function ThemeForm({
 
       <button
         type="submit"
-        className="h-14 rounded-full bg-zinc-900 text-base font-semibold text-white shadow-sm active:bg-zinc-700"
+        disabled={submitting}
+        className="h-14 rounded-full bg-zinc-900 text-base font-semibold text-white shadow-sm active:bg-zinc-700 disabled:opacity-50"
       >
-        {submitLabel}
+        {submitting ? "保存中..." : submitLabel}
       </button>
     </form>
   );

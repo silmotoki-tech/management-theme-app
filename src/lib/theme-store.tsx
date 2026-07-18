@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth-store";
 import {
   fetchThemesForUser,
   toJapaneseFirestoreError,
+  updateThemeInFirestore,
 } from "@/lib/firestore-themes";
 import type { Theme } from "@/lib/themes";
 
@@ -29,10 +30,10 @@ export type ThemeFormValues = {
 
 type ThemeStoreContextValue = {
   themes: Theme[];
-  /** 新規テーマを追加し、発行したidを返す。isDoneは常にfalseで作成する。 */
+  /** 新規テーマを追加し、発行したidを返す。isDoneは常にfalseで作成する。まだローカルのみ。 */
   addTheme: (values: Omit<ThemeFormValues, "isDone">) => string;
-  /** 既存テーマを更新する。終了したがONの場合は他の2状態を自動でOFFにする。 */
-  updateTheme: (id: string, values: ThemeFormValues) => void;
+  /** 既存テーマをFirestoreへ更新し、一覧を再取得する。 */
+  updateTheme: (id: string, values: ThemeFormValues) => Promise<void>;
 };
 
 const ThemeStoreContext = createContext<ThemeStoreContextValue | null>(null);
@@ -49,7 +50,7 @@ function createThemeId(): string {
   return `theme-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function useThemeMutations(setThemes: Dispatch<SetStateAction<Theme[]>>) {
+function useAddTheme(setThemes: Dispatch<SetStateAction<Theme[]>>) {
   const addTheme: ThemeStoreContextValue["addTheme"] = (values) => {
     const id = createThemeId();
 
@@ -75,38 +76,35 @@ function useThemeMutations(setThemes: Dispatch<SetStateAction<Theme[]>>) {
     return id;
   };
 
-  const updateTheme: ThemeStoreContextValue["updateTheme"] = (id, values) => {
-    setThemes((prev) =>
-      prev.map((theme) => {
-        if (theme.id !== id) return theme;
+  return addTheme;
+}
 
-        // 終了したをONにした場合は、今取り組んでいる・継続して確認するを自動でOFFにする。
-        const isDone = values.isDone;
-        const isActive = isDone ? false : values.isActive;
-        const isContinuing = isDone ? false : values.isContinuing;
+function buildUpdatedThemeFields(
+  theme: Theme,
+  values: ThemeFormValues,
+  themes: Theme[]
+) {
+  // 終了したをONにした場合は、今取り組んでいる・継続して確認するを自動でOFFにする。
+  const isDone = values.isDone;
+  const isActive = isDone ? false : values.isActive;
+  const isContinuing = isDone ? false : values.isContinuing;
 
-        return {
-          ...theme,
-          title: values.title,
-          currentStatus: values.currentStatus,
-          nextAction: values.nextAction,
-          dueDate: values.dueDate,
-          nextCheckDate: values.nextCheckDate,
-          isActive,
-          isContinuing,
-          isDone,
-          activeOrder: isActive
-            ? theme.activeOrder ?? nextOrder(prev, "activeOrder")
-            : null,
-          continuingOrder: isContinuing
-            ? theme.continuingOrder ?? nextOrder(prev, "continuingOrder")
-            : null,
-        };
-      })
-    );
+  return {
+    title: values.title,
+    currentStatus: values.currentStatus,
+    nextAction: values.nextAction,
+    dueDate: values.dueDate,
+    nextCheckDate: values.nextCheckDate,
+    isActive,
+    isContinuing,
+    isDone,
+    activeOrder: isActive
+      ? theme.activeOrder ?? nextOrder(themes, "activeOrder")
+      : null,
+    continuingOrder: isContinuing
+      ? theme.continuingOrder ?? nextOrder(themes, "continuingOrder")
+      : null,
   };
-
-  return { addTheme, updateTheme };
 }
 
 /**
@@ -123,7 +121,7 @@ function LoggedInThemeStoreProvider({
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { addTheme, updateTheme } = useThemeMutations(setThemes);
+  const addTheme = useAddTheme(setThemes);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,7 +135,7 @@ function LoggedInThemeStoreProvider({
       .catch((fetchError: unknown) => {
         if (cancelled) return;
         setThemes([]);
-        setError(toJapaneseFirestoreError(fetchError));
+        setError(toJapaneseFirestoreError(fetchError, "read"));
         setLoading(false);
       });
 
@@ -145,6 +143,21 @@ function LoggedInThemeStoreProvider({
       cancelled = true;
     };
   }, [uid]);
+
+  const updateTheme: ThemeStoreContextValue["updateTheme"] = async (
+    id,
+    values
+  ) => {
+    const theme = themes.find((item) => item.id === id);
+    if (!theme) {
+      throw new Error("更新対象のテーマが見つかりません");
+    }
+
+    const payload = buildUpdatedThemeFields(theme, values, themes);
+    await updateThemeInFirestore(id, payload, uid);
+    const loadedThemes = await fetchThemesForUser(uid);
+    setThemes(loadedThemes);
+  };
 
   if (loading) {
     return (
@@ -175,10 +188,14 @@ function LoggedInThemeStoreProvider({
 export function ThemeStoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [themes, setThemes] = useState<Theme[]>([]);
-  const { addTheme, updateTheme } = useThemeMutations(setThemes);
+  const addTheme = useAddTheme(setThemes);
 
   // 未ログイン時（ログイン画面など）はFirestore読み取りを行わない。
   if (!user) {
+    const updateTheme: ThemeStoreContextValue["updateTheme"] = async () => {
+      throw new Error("ログインが必要です");
+    };
+
     return (
       <ThemeStoreContext.Provider value={{ themes, addTheme, updateTheme }}>
         {children}

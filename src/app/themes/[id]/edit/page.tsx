@@ -1,10 +1,11 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { notFound } from "next/navigation";
 import { ThemeForm, type ThemeFormInputValues } from "@/components/theme-form";
+import { toJapaneseFirestoreError } from "@/lib/firestore-themes";
 import { useThemeStore } from "@/lib/theme-store";
 import { selectThemeById } from "@/lib/themes";
 
@@ -17,6 +18,8 @@ export default function EditThemePage({
   const router = useRouter();
   const { themes, updateTheme } = useThemeStore();
   const theme = selectThemeById(themes, id);
+  const [submitting, setSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   if (!theme) {
     notFound();
@@ -33,19 +36,29 @@ export default function EditThemePage({
     isDone: theme.isDone,
   };
 
-  const handleSubmit = (values: ThemeFormInputValues) => {
-    updateTheme(theme.id, {
-      title: values.title,
-      currentStatus: values.currentStatus,
-      nextAction: values.nextAction,
-      dueDate: values.dueDate === "" ? null : values.dueDate,
-      nextCheckDate: values.nextCheckDate === "" ? null : values.nextCheckDate,
-      isActive: values.isActive,
-      isContinuing: values.isContinuing,
-      isDone: values.isDone,
-    });
+  const handleSubmit = async (values: ThemeFormInputValues) => {
+    if (submitting) return;
 
-    router.push(`/themes/${theme.id}`);
+    setSubmitting(true);
+    setSaveError(null);
+
+    try {
+      await updateTheme(theme.id, {
+        title: values.title,
+        currentStatus: values.currentStatus,
+        nextAction: values.nextAction,
+        dueDate: values.dueDate === "" ? null : values.dueDate,
+        nextCheckDate: values.nextCheckDate === "" ? null : values.nextCheckDate,
+        isActive: values.isActive,
+        isContinuing: values.isContinuing,
+        isDone: values.isDone,
+      });
+
+      router.push(`/themes/${theme.id}`);
+    } catch (error: unknown) {
+      setSaveError(toJapaneseFirestoreError(error, "write"));
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -63,8 +76,13 @@ export default function EditThemePage({
           initialValues={initialValues}
           showDoneToggle
           submitLabel="保存"
+          submitting={submitting}
           onSubmit={handleSubmit}
         />
+
+        {saveError && (
+          <p className="text-sm text-red-500">{saveError}</p>
+        )}
       </main>
     </div>
   );

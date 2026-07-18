@@ -5,11 +5,27 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
+  updateDoc,
   where,
   type DocumentData,
 } from "firebase/firestore";
 import { firestoreDb } from "@/lib/firebase";
 import type { Theme } from "@/lib/themes";
+
+/** 既存テーマ更新時にFirestoreへ送る編集可能項目。groupId等は含めない。 */
+export type ThemeUpdatePayload = {
+  title: string;
+  currentStatus: string;
+  nextAction: string;
+  dueDate: string | null;
+  nextCheckDate: string | null;
+  isActive: boolean;
+  isContinuing: boolean;
+  isDone: boolean;
+  activeOrder: number | null;
+  continuingOrder: number | null;
+};
 
 /**
  * Firestoreのthemeドキュメントを既存のTheme型へ変換する。
@@ -36,7 +52,7 @@ export function toTheme(id: string, data: DocumentData): Theme {
 
 /**
  * ログイン中ユーザーの所属グループ（初期版は先頭のgroupId）で
- * themesを絞り込んで取得する。書き込みは行わない。
+ * themesを絞り込んで取得する。
  */
 export async function fetchThemesForUser(uid: string): Promise<Theme[]> {
   const userSnap = await getDoc(doc(firestoreDb, "users", uid));
@@ -66,8 +82,36 @@ export async function fetchThemesForUser(uid: string): Promise<Theme[]> {
   );
 }
 
-/** Firestore読み取りエラーを画面表示用の日本語メッセージに変換する。 */
-export function toJapaneseFirestoreError(error: unknown): string {
+/**
+ * 既存テーマを更新する。編集可能な項目だけをupdateDocで更新し、
+ * groupId / createdBy / createdAt は変更しない。
+ */
+export async function updateThemeInFirestore(
+  themeId: string,
+  values: ThemeUpdatePayload,
+  uid: string
+): Promise<void> {
+  await updateDoc(doc(firestoreDb, "themes", themeId), {
+    title: values.title,
+    currentStatus: values.currentStatus,
+    nextAction: values.nextAction,
+    dueDate: values.dueDate,
+    nextCheckDate: values.nextCheckDate,
+    isActive: values.isActive,
+    isContinuing: values.isContinuing,
+    isDone: values.isDone,
+    activeOrder: values.activeOrder,
+    continuingOrder: values.continuingOrder,
+    updatedBy: uid,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Firestoreエラーを画面表示用の日本語メッセージに変換する。 */
+export function toJapaneseFirestoreError(
+  error: unknown,
+  action: "read" | "write" = "read"
+): string {
   if (error instanceof FirebaseError) {
     switch (error.code) {
       case "permission-denied":
@@ -77,7 +121,9 @@ export function toJapaneseFirestoreError(error: unknown): string {
       case "not-found":
         return "データが見つかりません";
       default:
-        return "データの読み込みに失敗しました";
+        return action === "write"
+          ? "データの保存に失敗しました"
+          : "データの読み込みに失敗しました";
     }
   }
 
@@ -85,5 +131,7 @@ export function toJapaneseFirestoreError(error: unknown): string {
     return error.message;
   }
 
-  return "データの読み込みに失敗しました";
+  return action === "write"
+    ? "データの保存に失敗しました"
+    : "データの読み込みに失敗しました";
 }
