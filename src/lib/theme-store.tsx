@@ -5,12 +5,11 @@ import {
   useContext,
   useEffect,
   useState,
-  type Dispatch,
   type ReactNode,
-  type SetStateAction,
 } from "react";
 import { useAuth } from "@/lib/auth-store";
 import {
+  createThemeInFirestore,
   fetchThemesForUser,
   toJapaneseFirestoreError,
   updateThemeInFirestore,
@@ -30,8 +29,8 @@ export type ThemeFormValues = {
 
 type ThemeStoreContextValue = {
   themes: Theme[];
-  /** 新規テーマを追加し、発行したidを返す。isDoneは常にfalseで作成する。まだローカルのみ。 */
-  addTheme: (values: Omit<ThemeFormValues, "isDone">) => string;
+  /** 新規テーマをFirestoreへ作成し、発行したドキュメントIDを返す。 */
+  addTheme: (values: Omit<ThemeFormValues, "isDone">) => Promise<string>;
   /** 既存テーマをFirestoreへ更新し、一覧を再取得する。 */
   updateTheme: (id: string, values: ThemeFormValues) => Promise<void>;
 };
@@ -46,37 +45,29 @@ function nextOrder(themes: Theme[], key: "activeOrder" | "continuingOrder"): num
   return max + 1;
 }
 
-function createThemeId(): string {
-  return `theme-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+function buildCreateThemeFields(
+  values: Omit<ThemeFormValues, "isDone">,
+  themes: Theme[]
+) {
+  // 新規作成画面ではisDoneトグルを出さないため、常にfalseで作成する。
+  const isDone = false;
+  const isActive = values.isActive;
+  const isContinuing = values.isContinuing;
 
-function useAddTheme(setThemes: Dispatch<SetStateAction<Theme[]>>) {
-  const addTheme: ThemeStoreContextValue["addTheme"] = (values) => {
-    const id = createThemeId();
-
-    setThemes((prev) => [
-      ...prev,
-      {
-        id,
-        title: values.title,
-        currentStatus: values.currentStatus,
-        nextAction: values.nextAction,
-        dueDate: values.dueDate,
-        nextCheckDate: values.nextCheckDate,
-        isActive: values.isActive,
-        isContinuing: values.isContinuing,
-        isDone: false,
-        activeOrder: values.isActive ? nextOrder(prev, "activeOrder") : null,
-        continuingOrder: values.isContinuing
-          ? nextOrder(prev, "continuingOrder")
-          : null,
-      },
-    ]);
-
-    return id;
+  return {
+    title: values.title,
+    currentStatus: values.currentStatus,
+    nextAction: values.nextAction,
+    dueDate: values.dueDate,
+    nextCheckDate: values.nextCheckDate,
+    isActive,
+    isContinuing,
+    isDone,
+    activeOrder: isActive ? nextOrder(themes, "activeOrder") : null,
+    continuingOrder: isContinuing
+      ? nextOrder(themes, "continuingOrder")
+      : null,
   };
-
-  return addTheme;
 }
 
 function buildUpdatedThemeFields(
@@ -121,7 +112,6 @@ function LoggedInThemeStoreProvider({
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const addTheme = useAddTheme(setThemes);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +133,14 @@ function LoggedInThemeStoreProvider({
       cancelled = true;
     };
   }, [uid]);
+
+  const addTheme: ThemeStoreContextValue["addTheme"] = async (values) => {
+    const payload = buildCreateThemeFields(values, themes);
+    const id = await createThemeInFirestore(payload, uid);
+    const loadedThemes = await fetchThemesForUser(uid);
+    setThemes(loadedThemes);
+    return id;
+  };
 
   const updateTheme: ThemeStoreContextValue["updateTheme"] = async (
     id,
@@ -187,17 +185,20 @@ function LoggedInThemeStoreProvider({
 
 export function ThemeStoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const [themes, setThemes] = useState<Theme[]>([]);
-  const addTheme = useAddTheme(setThemes);
 
   // 未ログイン時（ログイン画面など）はFirestore読み取りを行わない。
   if (!user) {
+    const addTheme: ThemeStoreContextValue["addTheme"] = async () => {
+      throw new Error("ログインが必要です");
+    };
     const updateTheme: ThemeStoreContextValue["updateTheme"] = async () => {
       throw new Error("ログインが必要です");
     };
 
     return (
-      <ThemeStoreContext.Provider value={{ themes, addTheme, updateTheme }}>
+      <ThemeStoreContext.Provider
+        value={{ themes: [], addTheme, updateTheme }}
+      >
         {children}
       </ThemeStoreContext.Provider>
     );

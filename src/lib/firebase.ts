@@ -22,7 +22,7 @@ export const firebaseAuth: Auth = getAuth(firebaseApp);
 
 /**
  * Firestoreインスタンス。
- * 読み取りと既存テーマの編集保存はThemeStore経由で行う。
- * 新規作成・削除・並び替えの書き込みはまだ行わない。
+ * 読み取り・新規作成・既存テーマの編集保存はThemeStore経由で行う。
+ * 削除・並び替えの書き込みはまだ行わない。
  */
 export const firestoreDb: Firestore = getFirestore(firebaseApp);

@@ -1,5 +1,6 @@
 import { FirebaseError } from "firebase/app";
 import {
+  addDoc,
   collection,
   doc,
   getDoc,
@@ -27,6 +28,9 @@ export type ThemeUpdatePayload = {
   continuingOrder: number | null;
 };
 
+/** 新規テーマ作成時にFirestoreへ送る項目。groupIdは関数内でusersから取得する。 */
+export type ThemeCreatePayload = ThemeUpdatePayload;
+
 /**
  * Firestoreのthemeドキュメントを既存のTheme型へ変換する。
  * ドキュメントIDをTheme.idとして使う。
@@ -50,11 +54,8 @@ export function toTheme(id: string, data: DocumentData): Theme {
   };
 }
 
-/**
- * ログイン中ユーザーの所属グループ（初期版は先頭のgroupId）で
- * themesを絞り込んで取得する。
- */
-export async function fetchThemesForUser(uid: string): Promise<Theme[]> {
+/** users/{uid} から初期版用の先頭groupIdを取得する。 */
+async function getPrimaryGroupId(uid: string): Promise<string> {
   const userSnap = await getDoc(doc(firestoreDb, "users", uid));
 
   if (!userSnap.exists()) {
@@ -71,6 +72,16 @@ export async function fetchThemesForUser(uid: string): Promise<Theme[]> {
     throw new Error("所属グループが正しく設定されていません");
   }
 
+  return groupId;
+}
+
+/**
+ * ログイン中ユーザーの所属グループ（初期版は先頭のgroupId）で
+ * themesを絞り込んで取得する。
+ */
+export async function fetchThemesForUser(uid: string): Promise<Theme[]> {
+  const groupId = await getPrimaryGroupId(uid);
+
   const themesQuery = query(
     collection(firestoreDb, "themes"),
     where("groupId", "==", groupId)
@@ -80,6 +91,37 @@ export async function fetchThemesForUser(uid: string): Promise<Theme[]> {
   return themesSnap.docs.map((themeDoc) =>
     toTheme(themeDoc.id, themeDoc.data())
   );
+}
+
+/**
+ * 新規テーマをaddDocで作成する。ドキュメントIDはFirestoreが自動発行する。
+ * groupIdはusers/{uid}.groupIdsの先頭を使う。
+ */
+export async function createThemeInFirestore(
+  values: ThemeCreatePayload,
+  uid: string
+): Promise<string> {
+  const groupId = await getPrimaryGroupId(uid);
+
+  const docRef = await addDoc(collection(firestoreDb, "themes"), {
+    title: values.title,
+    currentStatus: values.currentStatus,
+    nextAction: values.nextAction,
+    dueDate: values.dueDate,
+    nextCheckDate: values.nextCheckDate,
+    isActive: values.isActive,
+    isContinuing: values.isContinuing,
+    isDone: values.isDone,
+    activeOrder: values.activeOrder,
+    continuingOrder: values.continuingOrder,
+    groupId,
+    createdBy: uid,
+    updatedBy: uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return docRef.id;
 }
 
 /**
