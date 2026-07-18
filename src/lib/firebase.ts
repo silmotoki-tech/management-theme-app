@@ -21,18 +21,7 @@ export const firebaseApp: FirebaseApp =
 export const firebaseAuth: Auth = getAuth(firebaseApp);
 
 /**
- * Firestoreインスタンス。この段階では接続の土台のみを用意し、
- * 実データの読み書きは行わない（既存の仮データ機能はThemeStoreのまま維持する）。
+ * Firestoreインスタンス。
+ * 読み取りはThemeStore経由で行い、書き込みはまだ行わない。
  */
 export const firestoreDb: Firestore = getFirestore(firebaseApp);
-
-/**
- * Firestoreの実データへは触れず、SDKの初期化が例外なく完了したことだけを
- * ブラウザのコンソールで確認するための最小限の処理。
- */
-if (typeof window !== "undefined") {
-  console.log(
-    "[firebase] Firestore initialized for project:",
-    firestoreDb.app.options.projectId
-  );
-}

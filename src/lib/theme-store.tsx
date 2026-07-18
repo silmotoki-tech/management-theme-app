@@ -1,7 +1,20 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { initialThemes, type Theme } from "@/lib/themes";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
+import { useAuth } from "@/lib/auth-store";
+import {
+  fetchThemesForUser,
+  toJapaneseFirestoreError,
+} from "@/lib/firestore-themes";
+import type { Theme } from "@/lib/themes";
 
 export type ThemeFormValues = {
   title: string;
@@ -36,9 +49,7 @@ function createThemeId(): string {
   return `theme-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function ThemeStoreProvider({ children }: { children: ReactNode }) {
-  const [themes, setThemes] = useState<Theme[]>(initialThemes);
-
+function useThemeMutations(setThemes: Dispatch<SetStateAction<Theme[]>>) {
   const addTheme: ThemeStoreContextValue["addTheme"] = (values) => {
     const id = createThemeId();
 
@@ -95,10 +106,90 @@ export function ThemeStoreProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  return { addTheme, updateTheme };
+}
+
+/**
+ * ログイン済みユーザー向け。マウント時にFirestoreからthemesを読み取る。
+ * uidが変わると親側で再マウントされる想定。
+ */
+function LoggedInThemeStoreProvider({
+  uid,
+  children,
+}: {
+  uid: string;
+  children: ReactNode;
+}) {
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { addTheme, updateTheme } = useThemeMutations(setThemes);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchThemesForUser(uid)
+      .then((loadedThemes) => {
+        if (cancelled) return;
+        setThemes(loadedThemes);
+        setLoading(false);
+      })
+      .catch((fetchError: unknown) => {
+        if (cancelled) return;
+        setThemes([]);
+        setError(toJapaneseFirestoreError(fetchError));
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-stone-50">
+        <p className="text-sm font-medium text-zinc-500">読み込み中...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-stone-50 px-5">
+        <p className="text-center text-sm font-medium text-red-500">{error}</p>
+        <p className="text-center text-sm text-zinc-500">
+          ページを再読み込みするか、再度ログインしてください
+        </p>
+      </div>
+    );
+  }
+
   return (
     <ThemeStoreContext.Provider value={{ themes, addTheme, updateTheme }}>
       {children}
     </ThemeStoreContext.Provider>
+  );
+}
+
+export function ThemeStoreProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const { addTheme, updateTheme } = useThemeMutations(setThemes);
+
+  // 未ログイン時（ログイン画面など）はFirestore読み取りを行わない。
+  if (!user) {
+    return (
+      <ThemeStoreContext.Provider value={{ themes, addTheme, updateTheme }}>
+        {children}
+      </ThemeStoreContext.Provider>
+    );
+  }
+
+  return (
+    <LoggedInThemeStoreProvider key={user.uid} uid={user.uid}>
+      {children}
+    </LoggedInThemeStoreProvider>
   );
 }
 
