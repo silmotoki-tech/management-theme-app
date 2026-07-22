@@ -5,6 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { useThemeStore } from "@/lib/theme-store";
 import { selectThemeById } from "@/lib/themes";
+import { ThemeComments } from "@/components/theme-comments";
 
 export default function ThemeDetailPage({
   params,
@@ -68,6 +69,8 @@ export default function ThemeDetailPage({
             <StatusRow label="終了した" value={theme.isDone} />
           </div>
         </section>
+
+        <ThemeComments key={theme.id} themeId={theme.id} />
       </main>
     </div>
   );
