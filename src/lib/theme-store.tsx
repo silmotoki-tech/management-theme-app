@@ -14,6 +14,7 @@ import {
   toJapaneseFirestoreError,
   updateThemeInFirestore,
   updateThemeOrdersInFirestore,
+  type ThemeUpdatePayload,
 } from "@/lib/firestore-themes";
 import type { Theme } from "@/lib/themes";
 
@@ -179,8 +180,22 @@ function LoggedInThemeStoreProvider({
       throw new Error("更新対象のテーマが見つかりません");
     }
 
+    const previous: ThemeUpdatePayload = {
+      title: theme.title,
+      currentStatus: theme.currentStatus,
+      nextAction: theme.nextAction,
+      dueDate: theme.dueDate,
+      nextCheckDate: theme.nextCheckDate,
+      isActive: theme.isActive,
+      isContinuing: theme.isContinuing,
+      isDone: theme.isDone,
+      activeOrder: theme.activeOrder,
+      continuingOrder: theme.continuingOrder,
+    };
     const payload = buildUpdatedThemeFields(theme, values, themes);
-    await updateThemeInFirestore(id, payload, uid);
+    const didUpdate = await updateThemeInFirestore(id, previous, payload, uid);
+    if (!didUpdate) return;
+
     const loadedThemes = await fetchThemesForUser(uid);
     setThemes(loadedThemes);
   };

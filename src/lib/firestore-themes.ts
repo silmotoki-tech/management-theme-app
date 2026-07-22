@@ -7,7 +7,6 @@ import {
   getDocs,
   query,
   serverTimestamp,
-  updateDoc,
   writeBatch,
   where,
   type DocumentData,
@@ -38,6 +37,62 @@ export type ThemeOrderUpdate = {
   orderField: "activeOrder" | "continuingOrder";
   orderValue: number;
 };
+
+/** 1回の編集保存で記録する変更項目。 */
+export type ThemeHistoryChange = {
+  field: string;
+  oldValue: string | boolean | number | null;
+  newValue: string | boolean | number | null;
+};
+
+const THEME_HISTORY_FIELDS = [
+  "title",
+  "currentStatus",
+  "nextAction",
+  "dueDate",
+  "nextCheckDate",
+  "isActive",
+  "isContinuing",
+  "isDone",
+  "activeOrder",
+  "continuingOrder",
+] as const satisfies ReadonlyArray<keyof ThemeUpdatePayload>;
+
+/** undefinedをnullへ正規化し、履歴・比較用の値にする。 */
+function normalizeHistoryValue(
+  value: unknown
+): string | boolean | number | null {
+  if (value === undefined || value === null) return null;
+  if (
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    typeof value === "number"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+/**
+ * 編集前後を比較し、実際に変わった項目だけをchanges配列にする。
+ * updatedBy / updatedAt は含めない。
+ */
+export function buildThemeChanges(
+  previous: ThemeUpdatePayload,
+  next: ThemeUpdatePayload
+): ThemeHistoryChange[] {
+  const changes: ThemeHistoryChange[] = [];
+
+  for (const field of THEME_HISTORY_FIELDS) {
+    const oldValue = normalizeHistoryValue(previous[field]);
+    const newValue = normalizeHistoryValue(next[field]);
+    if (!Object.is(oldValue, newValue)) {
+      changes.push({ field, oldValue, newValue });
+    }
+  }
+
+  return changes;
+}
 
 /**
  * Firestoreのthemeドキュメントを既存のTheme型へ変換する。
@@ -133,15 +188,26 @@ export async function createThemeInFirestore(
 }
 
 /**
- * 既存テーマを更新する。編集可能な項目だけをupdateDocで更新し、
+ * 既存テーマを更新する。実際に変わった項目があるときだけ、
+ * テーマ本体の更新とhistory作成を同じwriteBatchで実行する。
  * groupId / createdBy / createdAt は変更しない。
+ * 変更が0件の場合は書き込みを行わずfalseを返す。
  */
 export async function updateThemeInFirestore(
   themeId: string,
+  previous: ThemeUpdatePayload,
   values: ThemeUpdatePayload,
   uid: string
-): Promise<void> {
-  await updateDoc(doc(firestoreDb, "themes", themeId), {
+): Promise<boolean> {
+  const changes = buildThemeChanges(previous, values);
+  if (changes.length === 0) {
+    return false;
+  }
+
+  const batch = writeBatch(firestoreDb);
+  const themeRef = doc(firestoreDb, "themes", themeId);
+
+  batch.update(themeRef, {
     title: values.title,
     currentStatus: values.currentStatus,
     nextAction: values.nextAction,
@@ -155,6 +221,16 @@ export async function updateThemeInFirestore(
     updatedBy: uid,
     updatedAt: serverTimestamp(),
   });
+
+  const historyRef = doc(collection(firestoreDb, "themes", themeId, "history"));
+  batch.set(historyRef, {
+    changedBy: uid,
+    changedAt: serverTimestamp(),
+    changes,
+  });
+
+  await batch.commit();
+  return true;
 }
 
 /**
