@@ -8,6 +8,7 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  writeBatch,
   where,
   type DocumentData,
 } from "firebase/firestore";
@@ -30,6 +31,13 @@ export type ThemeUpdatePayload = {
 
 /** 新規テーマ作成時にFirestoreへ送る項目。groupIdは関数内でusersから取得する。 */
 export type ThemeCreatePayload = ThemeUpdatePayload;
+
+/** 並び順だけを更新するときの1件分。もう一方のorderには触れない。 */
+export type ThemeOrderUpdate = {
+  id: string;
+  orderField: "activeOrder" | "continuingOrder";
+  orderValue: number;
+};
 
 /**
  * Firestoreのthemeドキュメントを既存のTheme型へ変換する。
@@ -147,6 +155,29 @@ export async function updateThemeInFirestore(
     updatedBy: uid,
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * 並び順が変わったテーマだけをwriteBatchで一括更新する。
+ * activeOrder / continuingOrder のどちらか一方だけを書き、もう一方には触れない。
+ */
+export async function updateThemeOrdersInFirestore(
+  updates: ThemeOrderUpdate[],
+  uid: string
+): Promise<void> {
+  if (updates.length === 0) return;
+
+  const batch = writeBatch(firestoreDb);
+
+  for (const update of updates) {
+    batch.update(doc(firestoreDb, "themes", update.id), {
+      [update.orderField]: update.orderValue,
+      updatedBy: uid,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
 }
 
 /** Firestoreエラーを画面表示用の日本語メッセージに変換する。 */

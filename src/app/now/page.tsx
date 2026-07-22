@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useThemeStore } from "@/lib/theme-store";
 import { selectActiveThemes } from "@/lib/themes";
 import { getDueDateStatus, dueDateStatusClassName } from "@/lib/due-date-status";
-import { ThemeListItem } from "@/components/theme-list-item";
+import { SortableThemeList } from "@/components/sortable-theme-list";
 import { NewThemeButton } from "@/components/new-theme-button";
 
 export default function NowListPage() {
@@ -19,22 +19,13 @@ export default function NowListPage() {
         </Link>
         <h1 className="text-xl font-bold text-zinc-900">今やっていること</h1>
 
-        {activeThemes.length === 0 ? (
-          <p className="text-sm text-zinc-500">まだ項目はありません</p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {activeThemes.map((theme) => (
-              <ThemeListItem
-                key={theme.id}
-                id={theme.id}
-                title={theme.title}
-                accentClassName={dueDateStatusClassName(
-                  getDueDateStatus(theme.dueDate)
-                )}
-              />
-            ))}
-          </div>
-        )}
+        <SortableThemeList
+          themes={activeThemes}
+          orderField="activeOrder"
+          getAccentClassName={(theme) =>
+            dueDateStatusClassName(getDueDateStatus(theme.dueDate))
+          }
+        />
       </main>
       <NewThemeButton />
     </div>

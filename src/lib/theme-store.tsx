@@ -13,6 +13,7 @@ import {
   fetchThemesForUser,
   toJapaneseFirestoreError,
   updateThemeInFirestore,
+  updateThemeOrdersInFirestore,
 } from "@/lib/firestore-themes";
 import type { Theme } from "@/lib/themes";
 
@@ -29,10 +30,20 @@ export type ThemeFormValues = {
 
 type ThemeStoreContextValue = {
   themes: Theme[];
+  /** 並び順のFirestore保存中はtrue。この間は新たなドラッグを無効にする。 */
+  reordering: boolean;
   /** 新規テーマをFirestoreへ作成し、発行したドキュメントIDを返す。 */
   addTheme: (values: Omit<ThemeFormValues, "isDone">) => Promise<string>;
   /** 既存テーマをFirestoreへ更新し、一覧を再取得する。 */
   updateTheme: (id: string, values: ThemeFormValues) => Promise<void>;
+  /**
+   * 一覧の並び順をFirestoreへ保存する。
+   * orderedIdsの並びを1,2,3…として、指定したorderFieldだけ更新する。
+   */
+  reorderThemes: (
+    orderedIds: string[],
+    orderField: "activeOrder" | "continuingOrder"
+  ) => Promise<void>;
 };
 
 const ThemeStoreContext = createContext<ThemeStoreContextValue | null>(null);
@@ -98,6 +109,22 @@ function buildUpdatedThemeFields(
   };
 }
 
+function applyLocalOrder(
+  themes: Theme[],
+  orderedIds: string[],
+  orderField: "activeOrder" | "continuingOrder"
+): Theme[] {
+  const orderById = new Map(
+    orderedIds.map((id, index) => [id, index + 1] as const)
+  );
+
+  return themes.map((theme) => {
+    const nextOrderValue = orderById.get(theme.id);
+    if (nextOrderValue === undefined) return theme;
+    return { ...theme, [orderField]: nextOrderValue };
+  });
+}
+
 /**
  * ログイン済みユーザー向け。マウント時にFirestoreからthemesを読み取る。
  * uidが変わると親側で再マウントされる想定。
@@ -112,6 +139,7 @@ function LoggedInThemeStoreProvider({
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,6 +185,40 @@ function LoggedInThemeStoreProvider({
     setThemes(loadedThemes);
   };
 
+  const reorderThemes: ThemeStoreContextValue["reorderThemes"] = async (
+    orderedIds,
+    orderField
+  ) => {
+    const updates = orderedIds.flatMap((id, index) => {
+      const theme = themes.find((item) => item.id === id);
+      const orderValue = index + 1;
+      if (!theme || theme[orderField] === orderValue) {
+        return [];
+      }
+      return [{ id, orderField, orderValue }];
+    });
+
+    if (updates.length === 0) return;
+
+    const previousThemes = themes;
+    setThemes(applyLocalOrder(themes, orderedIds, orderField));
+    setReordering(true);
+
+    try {
+      await updateThemeOrdersInFirestore(updates, uid);
+    } catch (saveError) {
+      try {
+        const loadedThemes = await fetchThemesForUser(uid);
+        setThemes(loadedThemes);
+      } catch {
+        setThemes(previousThemes);
+      }
+      throw saveError;
+    } finally {
+      setReordering(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center bg-stone-50">
@@ -177,7 +239,9 @@ function LoggedInThemeStoreProvider({
   }
 
   return (
-    <ThemeStoreContext.Provider value={{ themes, addTheme, updateTheme }}>
+    <ThemeStoreContext.Provider
+      value={{ themes, reordering, addTheme, updateTheme, reorderThemes }}
+    >
       {children}
     </ThemeStoreContext.Provider>
   );
@@ -194,10 +258,19 @@ export function ThemeStoreProvider({ children }: { children: ReactNode }) {
     const updateTheme: ThemeStoreContextValue["updateTheme"] = async () => {
       throw new Error("ログインが必要です");
     };
+    const reorderThemes: ThemeStoreContextValue["reorderThemes"] = async () => {
+      throw new Error("ログインが必要です");
+    };
 
     return (
       <ThemeStoreContext.Provider
-        value={{ themes: [], addTheme, updateTheme }}
+        value={{
+          themes: [],
+          reordering: false,
+          addTheme,
+          updateTheme,
+          reorderThemes,
+        }}
       >
         {children}
       </ThemeStoreContext.Provider>

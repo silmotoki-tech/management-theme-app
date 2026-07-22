@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useThemeStore } from "@/lib/theme-store";
 import { selectContinuingThemes } from "@/lib/themes";
 import { getDueDateStatus, dueDateStatusClassName } from "@/lib/due-date-status";
-import { ThemeListItem } from "@/components/theme-list-item";
+import { SortableThemeList } from "@/components/sortable-theme-list";
 import { NewThemeButton } from "@/components/new-theme-button";
 
 export default function ContinuingListPage() {
@@ -19,22 +19,13 @@ export default function ContinuingListPage() {
         </Link>
         <h1 className="text-xl font-bold text-zinc-900">継続していること</h1>
 
-        {continuingThemes.length === 0 ? (
-          <p className="text-sm text-zinc-500">まだ項目はありません</p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {continuingThemes.map((theme) => (
-              <ThemeListItem
-                key={theme.id}
-                id={theme.id}
-                title={theme.title}
-                accentClassName={dueDateStatusClassName(
-                  getDueDateStatus(theme.nextCheckDate)
-                )}
-              />
-            ))}
-          </div>
-        )}
+        <SortableThemeList
+          themes={continuingThemes}
+          orderField="continuingOrder"
+          getAccentClassName={(theme) =>
+            dueDateStatusClassName(getDueDateStatus(theme.nextCheckDate))
+          }
+        />
       </main>
       <NewThemeButton />
     </div>
