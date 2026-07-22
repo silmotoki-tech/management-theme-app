@@ -1,0 +1,191 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isGroupMember(groupId) {
+      return isSignedIn() &&
+        request.auth.uid in
+          get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids;
+    }
+
+    function themeGroupId(themeId) {
+      return get(
+        /databases/$(database)/documents/themes/$(themeId)
+      ).data.groupId;
+    }
+
+    function themeFieldNames() {
+      return [
+        'title',
+        'currentStatus',
+        'nextAction',
+        'dueDate',
+        'nextCheckDate',
+        'isActive',
+        'isContinuing',
+        'isDone',
+        'activeOrder',
+        'continuingOrder',
+        'groupId',
+        'createdAt',
+        'createdBy',
+        'updatedAt',
+        'updatedBy'
+      ];
+    }
+
+    function hasAllThemeFields(data) {
+      return data.keys().hasAll(themeFieldNames());
+    }
+
+    function hasValidThemeFields(data) {
+      return data.keys().hasOnly(themeFieldNames()) &&
+        data.title is string &&
+        data.title.size() > 0 &&
+        data.currentStatus is string &&
+        data.nextAction is string &&
+        (data.dueDate == null || data.dueDate is string) &&
+        (data.nextCheckDate == null || data.nextCheckDate is string) &&
+        data.isActive is bool &&
+        data.isContinuing is bool &&
+        data.isDone is bool &&
+        (
+          data.activeOrder == null ||
+          (data.activeOrder is int && data.activeOrder >= 0)
+        ) &&
+        (
+          data.continuingOrder == null ||
+          (data.continuingOrder is int && data.continuingOrder >= 0)
+        ) &&
+        data.groupId is string &&
+        data.createdAt is timestamp &&
+        data.createdBy is string &&
+        data.updatedAt is timestamp &&
+        data.updatedBy is string;
+    }
+
+    match /users/{uid} {
+      allow read: if isSelf(uid);
+      allow write: if false;
+    }
+
+    match /groups/{groupId} {
+      allow read: if isSignedIn() &&
+        request.auth.uid in resource.data.memberUids;
+
+      allow write: if false;
+    }
+
+    match /themes/{themeId} {
+      allow read: if isGroupMember(resource.data.groupId);
+
+      allow create: if
+        isGroupMember(request.resource.data.groupId) &&
+        hasAllThemeFields(request.resource.data) &&
+        hasValidThemeFields(request.resource.data) &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.updatedBy == request.auth.uid &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+
+      allow update: if
+        isGroupMember(resource.data.groupId) &&
+        hasAllThemeFields(request.resource.data) &&
+        hasValidThemeFields(request.resource.data) &&
+        request.resource.data.groupId == resource.data.groupId &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.updatedBy == request.auth.uid &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data
+          .diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'title',
+            'currentStatus',
+            'nextAction',
+            'dueDate',
+            'nextCheckDate',
+            'isActive',
+            'isContinuing',
+            'isDone',
+            'activeOrder',
+            'continuingOrder',
+            'updatedBy',
+            'updatedAt'
+          ]);
+
+      allow delete: if false;
+
+      match /comments/{commentId} {
+        allow read: if isGroupMember(themeGroupId(themeId));
+
+        allow create: if
+  isGroupMember(themeGroupId(themeId)) &&
+  request.resource.data.keys().hasOnly([
+    'authorUid',
+    'authorName',
+    'text',
+    'createdAt'
+  ]) &&
+  request.resource.data.authorUid == request.auth.uid &&
+  request.resource.data.authorName is string &&
+  request.resource.data.authorName.size() > 0 &&
+  request.resource.data.authorName ==
+    get(
+      /databases/$(database)/documents/users/$(request.auth.uid)
+    ).data.name &&
+  request.resource.data.text is string &&
+  request.resource.data.text.size() > 0 &&
+  request.resource.data.text.size() <= 1000 &&
+  request.resource.data.createdAt == request.time;
+
+        allow update, delete: if false;
+      }
+
+      match /history/{historyId} {
+        allow read: if isGroupMember(themeGroupId(themeId));
+
+        allow create: if
+          isGroupMember(themeGroupId(themeId)) &&
+          request.resource.data.keys().hasOnly([
+            'changedBy',
+            'changedAt',
+            'changes'
+          ]) &&
+          request.resource.data.changedBy == request.auth.uid &&
+          request.resource.data.changedAt == request.time &&
+          request.resource.data.changes is list &&
+          request.resource.data.changes.size() > 0 &&
+          request.resource.data.changes.size() <= 20;
+
+        allow update, delete: if false;
+      }
+
+      match /reads/{uid} {
+        allow read: if
+          isSelf(uid) &&
+          isGroupMember(themeGroupId(themeId));
+
+        allow create, update: if
+          isSelf(uid) &&
+          isGroupMember(themeGroupId(themeId)) &&
+          request.resource.data.keys().hasOnly([
+            'lastViewedAt'
+          ]) &&
+          request.resource.data.lastViewedAt == request.time;
+
+        allow delete: if false;
+      }
+    }
+  }
+}
